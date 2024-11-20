@@ -1,0 +1,11 @@
+test_metadata:
+  type: config
+  name: custom-sqlserver-se
+  description: Create RDS custom mssql se
+
+# CLI to query engine and family: aws rds describe-db-engine-versions
+engine: 'custom-sqlserver-se'
+engine_version: '16.00.4085.2.v1'
+family: 'custom-sqlserver-se-16.0'
+
+storage_encrypted: true

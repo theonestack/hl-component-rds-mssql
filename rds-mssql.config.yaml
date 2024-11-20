@@ -48,3 +48,37 @@ storage_encrypted: false
 
 #parameter to allow major version upgrades
 #allow_major_version_upgrade: true
+
+disable_custom_resources: false
+
+tg_custom_resources:
+  custom_policies:
+    ec2-tg:
+      action:
+        - ec2:*
+      resource: '*'
+    opsdns:
+      action:
+        - sts:AssumeRole
+      resource:
+        - Fn::If:
+            - RemoteNSRecords
+            - Ref: ParentIAMRole
+            - arn:aws:iam::123456789012:user/noaccess
+  roles:
+    TGResource:
+      policies_inline:
+        - cloudwatch-logs
+        - ec2-tg
+
+  functions:
+    RdsTargetGroupCR:
+      code: target_group_from_rds.py
+      handler: target_group_from_rds.lambda_handler
+      runtime: python3.11
+      timeout: 600
+      role: TGResource
+      environment:
+        ENVIRONMENT_NAME:
+          Ref: EnvironmentName
+      package_cmd: './package.sh'

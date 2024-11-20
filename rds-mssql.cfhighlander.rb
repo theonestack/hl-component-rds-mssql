@@ -4,7 +4,8 @@ CfhighlanderTemplate do
     Description "#{component_name} - #{component_version}"
     
     ComponentVersion component_version
-  
+    DependsOn 'vpc'
+    DependsOn 'lib-iam'
     Parameters do
       ComponentParam 'VPCId', type: 'AWS::EC2::VPC::Id'
       ComponentParam 'StackOctet', isGlobal: true
@@ -18,5 +19,8 @@ CfhighlanderTemplate do
       ComponentParam 'SubnetIds', type: 'CommaDelimitedList'
       ComponentParam 'DatabaseBucket' if defined?(native_backup_restore) and native_backup_restore
     end
+
+    LambdaFunctions 'tg_custom_resources' unless disable_custom_resources
+
 end
 

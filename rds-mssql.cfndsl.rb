@@ -2,19 +2,32 @@ CloudFormation do
 
   Description "#{component_name} - #{component_version}"
   
+  Condition("UseUsernameAndPassword", FnEquals(Ref(:RDSSnapshotID), ''))
+
   tags = []
   tags << { Key: 'Environment', Value: Ref(:EnvironmentName) }
   tags << { Key: 'EnvironmentType', Value: Ref(:EnvironmentType) }
 
   extra_tags.each { |key,value| tags << { Key: key, Value: value } } if defined? extra_tags
 
+
+
   ingress = []
   security_group_rules.each do |rule|
-    sg_rule = {
-      FromPort: 1433,
-      IpProtocol: 'TCP',
-      ToPort: 1433,
-    }
+
+    if rule['from_port'] and rule['to_port']
+      sg_rule = {
+        FromPort: rule['from_port'],
+        IpProtocol: 'TCP',
+        ToPort: rule['to_port'],
+      }
+    else
+      sg_rule = {
+        FromPort: 1433,
+        IpProtocol: 'TCP',
+        ToPort: 1433,
+      }
+    end
     if rule['security_group_id']
       sg_rule['SourceSecurityGroupId'] = FnSub(rule['security_group_id'])
     else 
@@ -51,11 +64,35 @@ CloudFormation do
     Tags tags + [{ Key: 'Name', Value: FnJoin('-', [ Ref(:EnvironmentName), component_name, 'subnet-group' ])}]
   end
 
-  RDS_DBParameterGroup 'ParametersRDS' do
-    Description FnJoin(' ', [ Ref(:EnvironmentName), component_name, 'parameter group' ])
-    Family family
-    Parameters parameters if defined? parameters
-    Tags tags + [{ Key: 'Name', Value: FnJoin('-', [ Ref(:EnvironmentName), component_name, 'parameter-group' ])}]
+  if !engine.include? "custom"
+    RDS_DBParameterGroup 'ParametersRDS' do
+      Description FnJoin(' ', [ Ref(:EnvironmentName), component_name, 'parameter group' ])
+      Family family
+      Parameters parameters if defined? parameters
+      Tags tags + [{ Key: 'Name', Value: FnJoin('-', [ Ref(:EnvironmentName), component_name, 'parameter-group' ])}]
+    end
+  else
+    policies = []
+    iam_policies = external_parameters.fetch(:iam_policies, {})
+    # iam_policies.each do |name,policy|
+    #   policies << iam_policy_allow(name,policy['action'],policy['resource'] || '*')
+    # end if defined? iam_policies
+
+    managed_iam_policies = external_parameters.fetch(:managed_iam_policies, [])
+
+    Role('Role') do
+      RoleName FnSub("AWSRDSCustom-${EnvironmentName}-#{external_parameters[:component_name]}") 
+      AssumeRolePolicyDocument service_role_assume_policy(iam_services)
+      Path '/'
+      Policies(iam_role_policies(iam_policies))
+      ManagedPolicyArns managed_iam_policies if managed_iam_policies.any?
+    end
+
+    IAM_InstanceProfile('InstanceProfile') do
+      InstanceProfileName FnSub("AWSRDSCustom-${EnvironmentName}-#{external_parameters[:component_name]}") 
+      Path '/'
+      Roles [Ref('Role')]
+    end
   end
 
   if defined?(native_backup_restore) and native_backup_restore
@@ -120,18 +157,22 @@ CloudFormation do
   backup_window = external_parameters.fetch(:backup_window, nil)
   backup_retention_period = external_parameters.fetch(:backup_retention_period, nil)
   allow_major_version_upgrade = external_parameters.fetch(:allow_major_version_upgrade, nil)
+  storage_type = external_parameters.fetch(:storage_type, 'gp2')
+  iops = external_parameters.fetch(:iops, nil)
 
   RDS_DBInstance 'RDS' do
     AllowMajorVersionUpgrade allow_major_version_upgrade unless allow_major_version_upgrade.nil?
     DeletionPolicy deletion_policy if defined? deletion_policy
+    CustomIAMInstanceProfile Ref('InstanceProfile') if engine.include?("custom")
     DBInstanceClass Ref('RDSInstanceType')
     AllocatedStorage Ref('RDSAllocatedStorage')
-    StorageType 'gp2'
+    StorageType storage_type
+    Iops iops if storage_type.include?("io") 
     Engine engine
     EngineVersion engine_version
-    DBParameterGroupName Ref('ParametersRDS')
-    MasterUsername  instance_username
-    MasterUserPassword instance_password
+    DBParameterGroupName Ref('ParametersRDS') if !engine.include?("custom") 
+    MasterUsername  FnIf('UseUsernameAndPassword', instance_username, Ref('AWS::NoValue'))
+    MasterUserPassword  FnIf('UseUsernameAndPassword', instance_password, Ref('AWS::NoValue'))
     DBSnapshotIdentifier  Ref('RDSSnapshotID')
     DBSubnetGroupName  Ref('SubnetGroupRDS')
     VPCSecurityGroups [Ref('SecurityGroupRDS')]
@@ -160,14 +201,34 @@ CloudFormation do
     KmsKeyId kms_key_id if (defined? kms_key_id) && (storage_encrypted == true)
   end
 
+  Output(:InstanceId) {
+    Value(Ref(:RDS))
+    Export FnSub("${EnvironmentName}-#{external_parameters[:component_name]}-InstanceId")
+  }
+
   record = defined?(dns_record) ? dns_record : 'mssql'
 
-  Route53_RecordSet('DatabaseIntHostRecord') do
-    HostedZoneName FnJoin('', [ Ref('EnvironmentName'), '.', Ref('DnsDomain'), '.'])
-    Name FnJoin('', [ record, '.', Ref('EnvironmentName'), '.', Ref('DnsDomain'), '.' ])
-    Type 'CNAME'
-    TTL 60
-    ResourceRecords [ FnGetAtt('RDS','Endpoint.Address') ]
+  if engine.include?("custom")
+
+    Resource("CustomEc2InstanceId") do
+      Type 'Custom::RegisterTG'
+      Property 'ServiceToken',FnGetAtt('RdsTargetGroupCR','Arn')
+      Property 'AwsRegion', Ref('AWS::Region')
+      Property 'RDSInstanceId',Ref(:RDS)
+    end unless disable_custom_resources
+
+    Route53_RecordSet('DatabaseIntHostRecord') do
+      HostedZoneName FnJoin('', [ Ref('EnvironmentName'), '.', Ref('DnsDomain'), '.'])
+      Name FnJoin('', [ record, '.', Ref('EnvironmentName'), '.', Ref('DnsDomain'), '.' ])
+      Type 'CNAME'
+      TTL 60
+      ResourceRecords [ FnGetAtt('RDS','Endpoint.Address') ]
+    end
+
+    Output(:Ec2InstanceId) {
+      Value(FnGetAtt( 'CustomEc2InstanceId','Ec2InstanceId')   )
+      Export FnSub("${EnvironmentName}-#{external_parameters[:component_name]}-Ec2InstanceId")
+    }
   end
 
 end
