@@ -126,7 +126,7 @@ CloudFormation do
     DeletionPolicy deletion_policy if defined? deletion_policy
     DBInstanceClass Ref('RDSInstanceType')
     AllocatedStorage Ref('RDSAllocatedStorage')
-    StorageType 'gp2'
+    StorageType Ref('RDSStorageType')
     Engine engine
     EngineVersion engine_version
     DBParameterGroupName Ref('ParametersRDS')
