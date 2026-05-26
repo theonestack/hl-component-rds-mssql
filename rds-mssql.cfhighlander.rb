@@ -14,6 +14,8 @@ CfhighlanderTemplate do
       ComponentParam 'EnvironmentType', 'development', isGlobal: true, allowedValues: ['development', 'production']
       ComponentParam 'RDSInstanceType'
       ComponentParam 'RDSAllocatedStorage'
+      ComponentParam 'RDSStorageType', 'gp2', allowedValues: ['gp2', 'gp3', 'io1', 'standard']
+      ComponentParam 'RDSIops', 3000, type: 'Number'
       ComponentParam 'DnsDomain'
       ComponentParam 'SubnetIds', type: 'CommaDelimitedList'
       ComponentParam 'DatabaseBucket' if defined?(native_backup_restore) and native_backup_restore
