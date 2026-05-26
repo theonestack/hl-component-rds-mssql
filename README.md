@@ -9,6 +9,7 @@
 | SubnetIds | List of subnets | None | false | CommaDelimitedList
 | RDSInstanceType | RDS Instance Type to use | None | false | string
 | RDSAllocatedStorage | Amount of storage in GB to assign | None | false | string
+| RDSStorageType | The storage type for the RDS instance | gp2 | false | string | ['gp2','gp3','io1','standard']
 | DnsDomain | DNS domain to use | None | true | string
 | DatabaseBucket | Used when *native_backup_restore* is specified, defines the bucket to use | None | false | string
 | MultiAZ | Specifies whether the database instance is a multiple Availability Zone deployment  | false | false | ['true','false']
