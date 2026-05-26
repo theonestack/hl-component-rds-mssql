@@ -116,6 +116,8 @@ CloudFormation do
   instance_username = defined?(master_username) ? master_username : FnJoin('', [ '{{resolve:ssm:', FnSub(master_login['username_ssm_param']), ':1}}' ])
   instance_password = defined?(master_password) ? master_password : FnJoin('', [ '{{resolve:ssm-secure:', FnSub(master_login['password_ssm_param']), ':1}}' ])
 
+  Condition('IsIo1StorageType', FnEquals(Ref('RDSStorageType'), 'io1'))
+
   maintenance_window = external_parameters.fetch(:maintenance_window, nil)
   backup_window = external_parameters.fetch(:backup_window, nil)
   backup_retention_period = external_parameters.fetch(:backup_retention_period, nil)
@@ -127,6 +129,7 @@ CloudFormation do
     DBInstanceClass Ref('RDSInstanceType')
     AllocatedStorage Ref('RDSAllocatedStorage')
     StorageType Ref('RDSStorageType')
+    Iops FnIf('IsIo1StorageType', Ref('RDSIops'), Ref('AWS::NoValue'))
     Engine engine
     EngineVersion engine_version
     DBParameterGroupName Ref('ParametersRDS')
