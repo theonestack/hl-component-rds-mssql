@@ -122,12 +122,14 @@ CloudFormation do
   backup_window = external_parameters.fetch(:backup_window, nil)
   backup_retention_period = external_parameters.fetch(:backup_retention_period, nil)
   allow_major_version_upgrade = external_parameters.fetch(:allow_major_version_upgrade, nil)
+  max_allocated_storage = external_parameters.fetch(:max_allocated_storage, nil)
 
   RDS_DBInstance 'RDS' do
     AllowMajorVersionUpgrade allow_major_version_upgrade unless allow_major_version_upgrade.nil?
     DeletionPolicy deletion_policy if defined? deletion_policy
     DBInstanceClass Ref('RDSInstanceType')
     AllocatedStorage Ref('RDSAllocatedStorage')
+    MaxAllocatedStorage max_allocated_storage unless max_allocated_storage.nil?
     StorageType Ref('RDSStorageType')
     Iops FnIf('IsIo1StorageType', Ref('RDSIops'), Ref('AWS::NoValue'))
     Engine engine
@@ -162,6 +164,15 @@ CloudFormation do
     StorageEncrypted storage_encrypted if defined? storage_encrypted
     KmsKeyId kms_key_id if (defined? kms_key_id) && (storage_encrypted == true)
   end
+
+  Output(:DatabaseEndpoint) {
+    Value(FnGetAtt('RDS','Endpoint.Address'))
+    Export FnSub("${EnvironmentName}-#{external_parameters[:component_name]}-DatabaseEndpoint")
+  }
+  Output(:DatabasePort) {
+    Value(FnGetAtt('RDS','Endpoint.Port'))
+    Export FnSub("${EnvironmentName}-#{external_parameters[:component_name]}-DatabasePort")
+  }
 
   record = defined?(dns_record) ? dns_record : 'mssql'
 
